@@ -7,8 +7,8 @@
     "arch": "arm64",
     "kernel_name": "Image.gz-dtb",
 
-    "clang_version": "r450784e",
-    "clang_branch": "android12-release",
+    "clang_version": "r450784d",
+    "clang_branch": "master-kernel-build-2022",
 
     "ak3_repo": "https://github.com/osm0sis/AnyKernel3.git",
     "ak3_branch": "master",
