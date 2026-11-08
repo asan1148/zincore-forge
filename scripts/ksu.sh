@@ -105,6 +105,13 @@ bash "${SUSFS_SRC}/Patches/susfs_inline_hook_patches.sh" | tee /tmp/zincore_susf
 grep -o "Current susfs patch version:[0-9.]*" /tmp/zincore_susfs_hook.log | head -1 | sed 's/Current susfs patch version://' > "${WORKDIR}/${DEVICE}-susfs-version.txt" || true
 [ -s "${WORKDIR}/${DEVICE}-susfs-version.txt" ] || die "SuSFS hook script ran but no patch version was found in /tmp/zincore_susfs_hook.log, the version grep may be out of date"
 
+# 修复 SuSFS 补丁引入但 KSU 驱动未导出的 static_key 实体
+log "Fixing ksu_is_init_rc_hook_enabled static_key symbol in fs/read_write.c"
+if grep -q "extern struct static_key_true ksu_is_init_rc_hook_enabled;" "fs/read_write.c" 2>/dev/null; then
+    # 直接将 extern 声明替换为带有初始化的实体定义并导出符号，避免重定义冲突与链接失败
+    sed -i 's/extern struct static_key_true ksu_is_init_rc_hook_enabled;/struct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;\nEXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);/' "fs/read_write.c"
+fi
+
 # Core config fragment (structural — merged into out/.config by compile.sh)
 log "Patching static symbol exports required by KernelSU-Next"
 
@@ -140,15 +147,7 @@ unstatic "security/selinux/ss/services.c" "void security_dump_masked_av("
 unstatic "security/selinux/ss/services.c" "void context_struct_compute_av("
 
 log "Static-symbol export summary: ${UNSTATIC_APPLIED}/${UNSTATIC_TOTAL} applied"
-log "Patching missing ksu_is_init_rc_hook_enabled static_key for SuSFS"
-cat << 'EOF' >> fs/read_write.c
 
-#include <linux/jump_label.h>
-#include <linux/export.h>
-
-struct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;
-EXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);
-EOF
 if [ "$UNSTATIC_APPLIED" -lt "$UNSTATIC_TOTAL" ]; then
     warn "$((UNSTATIC_TOTAL - UNSTATIC_APPLIED)) pattern(s) above were NOT applied — this is expected if they're already non-static in this tree, but if this is a NEW kernel source (different repo/version than previously verified), manually confirm KernelSU-Next actually has the symbol access it needs before trusting this build."
 fi
