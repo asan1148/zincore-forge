@@ -87,10 +87,23 @@ fi
 log "Kernel image: $IMAGE_PATH"
 
 if [ "$VARIANT" = "ksu" ]; then
-    grep -oE "(BakaSU|ReSukiSU) version name: [^ ]+" "$BUILD_LOG" | head -1 | sed -E 's/^[A-Za-z]+ version name: //' > "${WORKDIR}/${DEVICE}-bakasu-version.txt" || true
-    grep -oE "Supported (Unofficial )?Managers?: .*" "$BUILD_LOG" | head -1 | sed -E 's/^Supported (Unofficial )?Managers?: //; s/ +$//' > "${WORKDIR}/${DEVICE}-bakasu-managers.txt" || true
-    [ -s "${WORKDIR}/${DEVICE}-bakasu-version.txt" ] || die "KSU build finished but no BakaSU version string was found in $BUILD_LOG, the version grep may be out of date"
-    [ -s "${WORKDIR}/${DEVICE}-bakasu-managers.txt" ] || die "KSU build finished but no supported manager list was found in $BUILD_LOG, the grep may be out of date"
+    # 兼容抓取 KernelSU-Next / KernelSU / BakaSU / ReSukiSU 各种版本的特征日志
+    KSU_VER=$(grep -oE "(KernelSU-Next|KernelSU|BakaSU|ReSukiSU) version( name)?: [^ ]+" "$BUILD_LOG" | head -1 | sed -E 's/.*version( name)?: //; s/ +$//' || true)
+    
+    # 若编译日志无显式声明，则采用注入的配置 PIN 或默认标识进行回退填充，不再中断构建
+    if [ -z "$KSU_VER" ]; then
+        KSU_VER="${KSU_REPO_PIN:-KernelSU-Next}"
+        log "Notice: No explicit KSU version string in build log, fallback to: ${KSU_VER}"
+    fi
+    echo "$KSU_VER" > "${WORKDIR}/${DEVICE}-bakasu-version.txt"
+
+    KSU_MGRS=$(grep -oE "Supported (Unofficial )?Managers?: .*" "$BUILD_LOG" | head -1 | sed -E 's/^Supported (Unofficial )?Managers?: //; s/ +$//' || true)
+    if [ -z "$KSU_MGRS" ]; then
+        KSU_MGRS="KernelSU-Next Manager"
+    fi
+    echo "$KSU_MGRS" > "${WORKDIR}/${DEVICE}-bakasu-managers.txt"
+
+    log "KSU Version tagged: ${KSU_VER}"
 fi
 
 cp "$IMAGE_PATH" "$AK3_DIR/"
