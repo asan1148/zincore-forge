@@ -140,15 +140,13 @@ unstatic "security/selinux/ss/services.c" "void security_dump_masked_av("
 unstatic "security/selinux/ss/services.c" "void context_struct_compute_av("
 
 log "Static-symbol export summary: ${UNSTATIC_APPLIED}/${UNSTATIC_TOTAL} applied"
-# 解决 SuSFS 依赖 ksu_is_init_rc_hook_enabled 未定义符号问题
-log "Patching missing ksu_is_init_rc_hook_enabled symbol for SuSFS"
+log "Patching missing ksu_is_init_rc_hook_enabled static_key for SuSFS"
 cat << 'EOF' >> fs/read_write.c
 
+#include <linux/jump_label.h>
 #include <linux/export.h>
-bool ksu_is_init_rc_hook_enabled(void)
-{
-    return true;
-}
+
+struct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;
 EXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);
 EOF
 if [ "$UNSTATIC_APPLIED" -lt "$UNSTATIC_TOTAL" ]; then
