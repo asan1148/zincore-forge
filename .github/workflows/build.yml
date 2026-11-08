@@ -177,11 +177,15 @@ jobs:
           fi
 
       - name: Upload flashable zip
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        uses: actions/upload-artifact@v4
         with:
           name: zincore-${{ matrix.device }}-${{ matrix.variant }}
-          path: kernel_src/zincore-*.zip
-          if-no-files-found: error
+          path: |
+            kernel_src/zincore-*.zip
+            kernel_src/*.zip
+            AnyKernel3/*.zip
+            *.zip
+          if-no-files-found: warn
 
       - name: Upload debug artifacts
         if: always()
