@@ -176,6 +176,21 @@ unstatic "security/selinux/ss/services.c" "void context_struct_compute_av("
 
 log "Static-symbol export summary: ${UNSTATIC_APPLIED}/${UNSTATIC_TOTAL} applied"
 
+# 补齐 SuSFS 依赖的 static_key 实体，放入独立 C 文件参与编译
+log "Injecting missing ksu_is_init_rc_hook_enabled via fs/ksu_susfs_fix.c"
+
+cat << 'EOF' > fs/ksu_susfs_fix.c
+#include <linux/jump_label.h>
+#include <linux/export.h>
+
+struct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;
+EXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);
+EOF
+
+if ! grep -q "ksu_susfs_fix.o" "fs/Makefile" 2>/dev/null; then
+    echo "obj-y += ksu_susfs_fix.o" >> fs/Makefile
+fi
+
 if [ "$UNSTATIC_APPLIED" -lt "$UNSTATIC_TOTAL" ]; then
     warn "$((UNSTATIC_TOTAL - UNSTATIC_APPLIED)) pattern(s) above were NOT applied — this is expected if they're already non-static in this tree, but if this is a NEW kernel source (different repo/version than previously verified), manually confirm KernelSU-Next actually has the symbol access it needs before trusting this build."
 fi
