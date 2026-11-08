@@ -42,11 +42,11 @@ log "Installing KernelSU-Next (pinned to ${KSU_REPO_PIN})"
 bash "${KSU_SRC}/kernel/setup.sh" "$KSU_REPO_PIN"
 
 # 兼容分支名（如 next）和具体 Commit SHA-1 的校验逻辑
-CURRENT_HEAD="$(git -C KernelSU rev-parse HEAD 2>/dev/null || echo "")"
-if [ -n "$CURRENT_HEAD" ]; then
-    log "KernelSU-Next installed successfully at commit: ${CURRENT_HEAD}"
+if [ -d "drivers/kernelsu" ] || [ -d "KernelSU" ]; then
+    CURRENT_HEAD="$(git -C "$KSU_SRC" rev-parse --short HEAD 2>/dev/null || echo "pinned")"
+    log "KernelSU-Next installed successfully (at ${CURRENT_HEAD})"
 else
-    die "KernelSU-Next setup failed — KernelSU directory not found or invalid"
+    die "KernelSU-Next setup failed — drivers/kernelsu or KernelSU directory not found"
 fi
 
 log "Applying SuSFS patch for kernel $KERNEL_VERSION"
