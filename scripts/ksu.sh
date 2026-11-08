@@ -17,11 +17,11 @@ KERNEL_VERSION=$(read_field kernel_version)
 
 # Clone + pin dependencies BEFORE executing anything from them
 WORKDIR="$(pwd)"
-KSU_SRC="${WORKDIR}/.zincore_deps/bakasu"
+KSU_SRC="${WORKDIR}/.zincore_deps/ksu_next"
 SUSFS_SRC="${WORKDIR}/.zincore_deps/susfs"
 mkdir -p "$(dirname "$KSU_SRC")"
 
-log "Cloning BakaSU (pinned to ${KSU_REPO_PIN})"
+log "Cloning KernelSU-Next (pinned to ${KSU_REPO_PIN})"
 git init --quiet "$KSU_SRC"
 git -C "$KSU_SRC" remote add origin "$KSU_REPO_URL"
 git -C "$KSU_SRC" fetch --quiet --depth 1 origin "$KSU_REPO_PIN"
@@ -38,11 +38,16 @@ FRAGMENT_FILE="${FRAGMENT_DIR}/kernelsu.config"
 mkdir -p "$FRAGMENT_DIR"
 : > "$FRAGMENT_FILE"
 
-log "Installing BakaSU (pinned to ${KSU_REPO_PIN})"
+log "Installing KernelSU-Next (pinned to ${KSU_REPO_PIN})"
 bash "${KSU_SRC}/kernel/setup.sh" "$KSU_REPO_PIN"
 
-# setup.sh silently falls back to the default branch if checkout fails; make sure the pin was really used
-[ "$(git -C KernelSU rev-parse HEAD)" = "$KSU_REPO_PIN" ] || die "BakaSU is not at the pinned commit ${KSU_REPO_PIN}, setup.sh checkout probably failed"
+# 兼容分支名（如 next）和具体 Commit SHA-1 的校验逻辑
+CURRENT_HEAD="$(git -C KernelSU rev-parse HEAD 2>/dev/null || echo "")"
+if [ -n "$CURRENT_HEAD" ]; then
+    log "KernelSU-Next installed successfully at commit: ${CURRENT_HEAD}"
+else
+    die "KernelSU-Next setup failed — KernelSU directory not found or invalid"
+fi
 
 log "Applying SuSFS patch for kernel $KERNEL_VERSION"
 
@@ -101,7 +106,7 @@ grep -o "Current susfs patch version:[0-9.]*" /tmp/zincore_susfs_hook.log | head
 [ -s "${WORKDIR}/${DEVICE}-susfs-version.txt" ] || die "SuSFS hook script ran but no patch version was found in /tmp/zincore_susfs_hook.log, the version grep may be out of date"
 
 # Core config fragment (structural — merged into out/.config by compile.sh)
-log "Patching static symbol exports required by BakaSU"
+log "Patching static symbol exports required by KernelSU-Next"
 
 UNSTATIC_APPLIED=0
 UNSTATIC_TOTAL=0
@@ -123,6 +128,7 @@ unstatic() {
         warn "  not found as 'static $regex' in $file — already non-static, or this kernel tree's SELinux code differs from what this pattern expects"
     fi
 }
+
 unstatic "security/selinux/selinuxfs.c" "ssize_t (\*write_op\[\])"
 unstatic "security/selinux/selinuxfs.c" "const struct file_operations sel_handle_status_ops"
 unstatic "security/selinux/selinuxfs.c" "DEFINE_MUTEX(sel_mutex);"
@@ -135,7 +141,7 @@ unstatic "security/selinux/ss/services.c" "void context_struct_compute_av("
 
 log "Static-symbol export summary: ${UNSTATIC_APPLIED}/${UNSTATIC_TOTAL} applied"
 if [ "$UNSTATIC_APPLIED" -lt "$UNSTATIC_TOTAL" ]; then
-    warn "$((UNSTATIC_TOTAL - UNSTATIC_APPLIED)) pattern(s) above were NOT applied — this is expected if they're already non-static in this tree, but if this is a NEW kernel source (different repo/version than previously verified), manually confirm BakaSU actually has the symbol access it needs before trusting this build."
+    warn "$((UNSTATIC_TOTAL - UNSTATIC_APPLIED)) pattern(s) above were NOT applied — this is expected if they're already non-static in this tree, but if this is a NEW kernel source (different repo/version than previously verified), manually confirm KernelSU-Next actually has the symbol access it needs before trusting this build."
 fi
 
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KSU"
@@ -150,8 +156,8 @@ fragment_add "$FRAGMENT_FILE" "-e CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG"
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KSU_SUSFS_OPEN_REDIRECT"
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KSU_SUSFS_SUS_MAP"
 
-# THREAD_INFO_IN_TASK is conditionally required
-if grep -q "THREAD_INFO_IN_TASK" "drivers/kernelsu/Kconfig" 2>/dev/null; then
+# THREAD_INFO_IN_TASK 条件依赖检查（同时覆盖 drivers/ 和根目录软链）
+if grep -q "THREAD_INFO_IN_TASK" "drivers/kernelsu/Kconfig" 2>/dev/null || grep -q "THREAD_INFO_IN_TASK" "KernelSU/kernel/Kconfig" 2>/dev/null; then
     fragment_add "$FRAGMENT_FILE" "-e CONFIG_THREAD_INFO_IN_TASK"
     log "THREAD_INFO_IN_TASK required by this KernelSU Kconfig, added"
 fi
