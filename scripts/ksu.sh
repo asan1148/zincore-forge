@@ -105,11 +105,14 @@ bash "${SUSFS_SRC}/Patches/susfs_inline_hook_patches.sh" | tee /tmp/zincore_susf
 grep -o "Current susfs patch version:[0-9.]*" /tmp/zincore_susfs_hook.log | head -1 | sed 's/Current susfs patch version://' > "${WORKDIR}/${DEVICE}-susfs-version.txt" || true
 [ -s "${WORKDIR}/${DEVICE}-susfs-version.txt" ] || die "SuSFS hook script ran but no patch version was found in /tmp/zincore_susfs_hook.log, the version grep may be out of date"
 
-# 修复 SuSFS 补丁引入但 KSU 驱动未导出的 static_key 实体
-log "Fixing ksu_is_init_rc_hook_enabled static_key symbol in fs/read_write.c"
-if grep -q "extern struct static_key_true ksu_is_init_rc_hook_enabled;" "fs/read_write.c" 2>/dev/null; then
-    # 直接将 extern 声明替换为带有初始化的实体定义并导出符号，避免重定义冲突与链接失败
-    sed -i 's/extern struct static_key_true ksu_is_init_rc_hook_enabled;/struct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;\nEXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);/' "fs/read_write.c"
+# 彻底清理并正确定位定义 ksu_is_init_rc_hook_enabled
+log "Fixing ksu_is_init_rc_hook_enabled in fs/read_write.c"
+if [ -f "fs/read_write.c" ]; then
+    # 1. 移除可能残留的 extern 声明与末尾追加代码，防止重复定义
+    sed -i '/ksu_is_init_rc_hook_enabled/d' "fs/read_write.c"
+
+    # 2. 在文件首个有效头文件包含后注入定义与符号导出
+    sed -i '0,/#include/s//#include <linux\/jump_label.h>\nstruct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;\nEXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);\n#include/' "fs/read_write.c"
 fi
 
 # Core config fragment (structural — merged into out/.config by compile.sh)
