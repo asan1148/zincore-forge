@@ -1,7 +1,7 @@
 {
   "wayne": {
     "kernel_repo": "https://github.com/xiaoleGun/android_kernel_xiaomi_wayne-4.19.git",
-    "kernel_branch": "lineage-21.0",
+    "kernel_branch": "fourteen",
     "defconfig": "vendor/wayne_defconfig",
     "kernel_version": "4.19",
     "arch": "arm64",
