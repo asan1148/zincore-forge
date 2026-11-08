@@ -105,14 +105,26 @@ bash "${SUSFS_SRC}/Patches/susfs_inline_hook_patches.sh" | tee /tmp/zincore_susf
 grep -o "Current susfs patch version:[0-9.]*" /tmp/zincore_susfs_hook.log | head -1 | sed 's/Current susfs patch version://' > "${WORKDIR}/${DEVICE}-susfs-version.txt" || true
 [ -s "${WORKDIR}/${DEVICE}-susfs-version.txt" ] || die "SuSFS hook script ran but no patch version was found in /tmp/zincore_susfs_hook.log, the version grep may be out of date"
 
-# 彻底清理并正确定位定义 ksu_is_init_rc_hook_enabled
-log "Fixing ksu_is_init_rc_hook_enabled in fs/read_write.c"
-if [ -f "fs/read_write.c" ]; then
-    # 1. 移除可能残留的 extern 声明与末尾追加代码，防止重复定义
-    sed -i '/ksu_is_init_rc_hook_enabled/d' "fs/read_write.c"
+# 解决 SuSFS 缺失 ksu_is_init_rc_hook_enabled 的独立补丁方案
+log "Fixing ksu_is_init_rc_hook_enabled via independent compilation unit"
 
-    # 2. 在文件首个有效头文件包含后注入定义与符号导出
-    sed -i '0,/#include/s//#include <linux\/jump_label.h>\nstruct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;\nEXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);\n#include/' "fs/read_write.c"
+# 1. 彻底还原 fs/read_write.c，删除之前 sed 插入的所有脏代码
+if [ -f "fs/read_write.c" ]; then
+    git checkout -- "fs/read_write.c" 2>/dev/null || true
+fi
+
+# 2. 创建独立的 C 文件，包含标准头文件与实体定义
+cat << 'EOF' > fs/ksu_susfs_fix.c
+#include <linux/jump_label.h>
+#include <linux/export.h>
+
+struct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;
+EXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);
+EOF
+
+# 3. 将其追加到 fs/Makefile 中参与编译链接
+if ! grep -q "ksu_susfs_fix.o" "fs/Makefile" 2>/dev/null; then
+    echo "obj-y += ksu_susfs_fix.o" >> fs/Makefile
 fi
 
 # Core config fragment (structural — merged into out/.config by compile.sh)
