@@ -1,15 +1,18 @@
 {
-  "device": "wayne",
-  "kernel_version": "4.19",
-  "kernel_repo": "https://github.com/xiaoleGun/android_kernel_xiaomi_wayne-4.19",
-  "kernel_branch": "lineage-21",
-  "kernel_defconfig": "vendor/wayne_defconfig",
-  "arch": "arm64",
-  "image_name": "Image.gz-dtb",
-  "clang_version": "r450784e",
-  "enable_lto": false,
-  "anykernel": {
-    "block": "/dev/block/bootdevice/by-name/boot",
-    "is_slot_device": 0
+  "wayne": {
+    "kernel_repo": "https://github.com/xiaoleGun/android_kernel_xiaomi_wayne-4.19.git",
+    "kernel_branch": "lineage-21",
+    "defconfig": "vendor/wayne_defconfig",
+    "kernel_version": "4.19",
+    "arch": "arm64",
+    "kernel_name": "Image.gz-dtb",
+
+    "clang_version": "r450784e",
+    "clang_branch": "android12-release",
+
+    "ak3_repo": "https://github.com/osm0sis/AnyKernel3.git",
+    "ak3_branch": "master",
+
+    "variants": ["ksu"]
   }
 }
