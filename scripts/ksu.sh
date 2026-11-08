@@ -140,6 +140,17 @@ unstatic "security/selinux/ss/services.c" "void security_dump_masked_av("
 unstatic "security/selinux/ss/services.c" "void context_struct_compute_av("
 
 log "Static-symbol export summary: ${UNSTATIC_APPLIED}/${UNSTATIC_TOTAL} applied"
+# 解决 SuSFS 依赖 ksu_is_init_rc_hook_enabled 未定义符号问题
+log "Patching missing ksu_is_init_rc_hook_enabled symbol for SuSFS"
+cat << 'EOF' >> fs/read_write.c
+
+#include <linux/export.h>
+bool ksu_is_init_rc_hook_enabled(void)
+{
+    return true;
+}
+EXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);
+EOF
 if [ "$UNSTATIC_APPLIED" -lt "$UNSTATIC_TOTAL" ]; then
     warn "$((UNSTATIC_TOTAL - UNSTATIC_APPLIED)) pattern(s) above were NOT applied — this is expected if they're already non-static in this tree, but if this is a NEW kernel source (different repo/version than previously verified), manually confirm KernelSU-Next actually has the symbol access it needs before trusting this build."
 fi
