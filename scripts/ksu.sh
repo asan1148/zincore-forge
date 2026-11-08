@@ -41,6 +41,21 @@ mkdir -p "$FRAGMENT_DIR"
 log "Installing KernelSU-Next (pinned to ${KSU_REPO_PIN})"
 bash "${KSU_SRC}/kernel/setup.sh" "$KSU_REPO_PIN"
 
+# 兜底确保 drivers/Kconfig 与 drivers/Makefile 包含 KernelSU 入口（针对非 GKI 4.19 树）
+if [ -d "KernelSU" ] && [ ! -d "drivers/kernelsu" ]; then
+    ln -sfn ../KernelSU/kernel drivers/kernelsu
+fi
+
+if [ -f "drivers/Kconfig" ] && ! grep -q "drivers/kernelsu/Kconfig" "drivers/Kconfig" 2>/dev/null; then
+    sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' "drivers/Kconfig"
+    log "Injected KernelSU Kconfig entry into drivers/Kconfig"
+fi
+
+if [ -f "drivers/Makefile" ] && ! grep -q "kernelsu" "drivers/Makefile" 2>/dev/null; then
+    echo "obj-\$(CONFIG_KSU) += kernelsu/" >> drivers/Makefile
+    log "Injected KernelSU obj entry into drivers/Makefile"
+fi
+
 # 兼容分支名（如 next）和具体 Commit SHA-1 的校验逻辑
 if [ -d "drivers/kernelsu" ] || [ -d "KernelSU" ]; then
     CURRENT_HEAD="$(git -C "$KSU_SRC" rev-parse --short HEAD 2>/dev/null || echo "pinned")"
@@ -108,7 +123,7 @@ grep -o "Current susfs patch version:[0-9.]*" /tmp/zincore_susfs_hook.log | head
 # 解决 SuSFS 缺失 ksu_is_init_rc_hook_enabled 的独立编译单元方案
 log "Fixing ksu_is_init_rc_hook_enabled via independent source file"
 
-# 1. 还原并清理 fs/read_write.c 中被 sed 插入的第 10 行脏代码
+# 1. 还原并清理 fs/read_write.c 中可能残留的脏代码
 git checkout -- "fs/read_write.c" 2>/dev/null || true
 sed -i '/ksu_is_init_rc_hook_enabled/d' "fs/read_write.c" 2>/dev/null || true
 
@@ -122,20 +137,6 @@ EXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);
 EOF
 
 # 3. 将其注册进 fs/Makefile 参与正常构建
-if ! grep -q "ksu_susfs_fix.o" "fs/Makefile" 2>/dev/null; then
-    echo "obj-y += ksu_susfs_fix.o" >> fs/Makefile
-fi
-
-# 2. 创建独立的 C 文件，包含标准头文件与实体定义
-cat << 'EOF' > fs/ksu_susfs_fix.c
-#include <linux/jump_label.h>
-#include <linux/export.h>
-
-struct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;
-EXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);
-EOF
-
-# 3. 将其追加到 fs/Makefile 中参与编译链接
 if ! grep -q "ksu_susfs_fix.o" "fs/Makefile" 2>/dev/null; then
     echo "obj-y += ksu_susfs_fix.o" >> fs/Makefile
 fi
@@ -176,24 +177,14 @@ unstatic "security/selinux/ss/services.c" "void context_struct_compute_av("
 
 log "Static-symbol export summary: ${UNSTATIC_APPLIED}/${UNSTATIC_TOTAL} applied"
 
-# 补齐 SuSFS 依赖的 static_key 实体，放入独立 C 文件参与编译
-log "Injecting missing ksu_is_init_rc_hook_enabled via fs/ksu_susfs_fix.c"
-
-cat << 'EOF' > fs/ksu_susfs_fix.c
-#include <linux/jump_label.h>
-#include <linux/export.h>
-
-struct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;
-EXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);
-EOF
-
-if ! grep -q "ksu_susfs_fix.o" "fs/Makefile" 2>/dev/null; then
-    echo "obj-y += ksu_susfs_fix.o" >> fs/Makefile
-fi
-
 if [ "$UNSTATIC_APPLIED" -lt "$UNSTATIC_TOTAL" ]; then
     warn "$((UNSTATIC_TOTAL - UNSTATIC_APPLIED)) pattern(s) above were NOT applied — this is expected if they're already non-static in this tree, but if this is a NEW kernel source (different repo/version than previously verified), manually confirm KernelSU-Next actually has the symbol access it needs before trusting this build."
 fi
+
+# 关键：开启 KSU 驱动及其必须的内核依赖（防止 olddefconfig 自动丢弃 CONFIG_KSU）
+fragment_add "$FRAGMENT_FILE" "-e CONFIG_KPROBES"
+fragment_add "$FRAGMENT_FILE" "-e CONFIG_HAVE_KPROBES"
+fragment_add "$FRAGMENT_FILE" "-e CONFIG_KPROBE_EVENTS"
 
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KSU"
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KSU_SUSFS"
