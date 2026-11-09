@@ -28,16 +28,13 @@ AK3_DIR="${WORKDIR}/AnyKernel3"
 rm -rf "$AK3_DIR"
 git clone --depth 1 -b "$AK3_BRANCH" "$AK3_REPO" "$AK3_DIR"
 
-# 自动注入 AnyKernel3 适配配置（机型代号 + 分区自动探测）
+# 自动注入 AnyKernel3 适配配置（大小写兼顾，自动识别分区）
 if [ -f "${AK3_DIR}/anykernel.sh" ]; then
     sed -i "s|^device\.name1=.*|device.name1=${DEVICE};|" "${AK3_DIR}/anykernel.sh"
-    sed -i "s|^device\.name2=.*|device.name2=;|" "${AK3_DIR}/anykernel.sh"
-    sed -i "s|^device\.name3=.*|device.name3=;|" "${AK3_DIR}/anykernel.sh"
-    sed -i "s|^device\.name4=.*|device.name4=;|" "${AK3_DIR}/anykernel.sh"
-    sed -i "s|^device\.name5=.*|device.name5=;|" "${AK3_DIR}/anykernel.sh"
-    sed -i "s|^block=.*|block=auto;|" "${AK3_DIR}/anykernel.sh"
-    sed -i "s|^is_slot_device=.*|is_slot_device=0;|" "${AK3_DIR}/anykernel.sh"
-    log "AnyKernel3 configured for ${DEVICE} (block=auto)"
+    sed -i "s|^device\.name2=.*|device.name2=MI 6X;|" "${AK3_DIR}/anykernel.sh"
+    sed -i -E "s|^[bB][lL][oO][cC][kK]=.*|BLOCK=auto;|" "${AK3_DIR}/anykernel.sh"
+    sed -i -E "s|^[iI][sS]_[sS][lL][oO][tT]_[dD][eE][vV][iI][cC][eE]=.*|IS_SLOT_DEVICE=0;|" "${AK3_DIR}/anykernel.sh"
+    log "AnyKernel3 configured for ${DEVICE} (BLOCK=auto, IS_SLOT_DEVICE=0)"
 fi
 
 # Base defconfig
