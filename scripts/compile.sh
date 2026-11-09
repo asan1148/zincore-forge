@@ -103,7 +103,7 @@ else
 fi
 
 # KCFLAGS: legacy-kernel / modern-clang compatibility shims
-export KCFLAGS="-O2 -Wno-error=implicit-function-declaration -Wno-error=implicit-int -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=incompatible-function-pointer-types"
+export KCFLAGS="-O2 -DCONFIG_KSU_SUSFS=1 -DCONFIG_KSU_SUSFS_SUS_PATH=1 -DCONFIG_KSU_SUSFS_SUS_MOUNT=1 -DCONFIG_KSU_SUSFS_SUS_KSTAT=1 -Wno-error=implicit-function-declaration -Wno-error=implicit-int -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=incompatible-function-pointer-types"
 
 BUILD_LOG="${WORKDIR}/${DEVICE}-${VARIANT}-build.log"
 log "Compiling (log: $BUILD_LOG)"
