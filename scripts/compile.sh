@@ -28,13 +28,23 @@ AK3_DIR="${WORKDIR}/AnyKernel3"
 rm -rf "$AK3_DIR"
 git clone --depth 1 -b "$AK3_BRANCH" "$AK3_REPO" "$AK3_DIR"
 
-# 自动注入 AnyKernel3 适配配置（大小写兼顾，自动识别分区）
+# 自动注入 AnyKernel3 适配配置
 if [ -f "${AK3_DIR}/anykernel.sh" ]; then
-    sed -i "s|^device\.name1=.*|device.name1=${DEVICE};|" "${AK3_DIR}/anykernel.sh"
-    sed -i "s|^device\.name2=.*|device.name2=MI 6X;|" "${AK3_DIR}/anykernel.sh"
+    # 1. 无论前方是否有空格缩进，精确匹配 kernel.string
+    sed -i -E "s|[# ]*kernel\.string=.*|kernel.string=Zincore Kernel for ${DEVICE}|" "${AK3_DIR}/anykernel.sh"
+
+    # 2. 关键：关闭设备型号检查，杜绝 Recovery 属性识别不一致导致的 abort
+    sed -i -E "s|[# ]*do\.devicecheck=.*|do.devicecheck=0|" "${AK3_DIR}/anykernel.sh"
+
+    # 3. 规范写入支持设备代号（绝不能带分号）
+    sed -i -E "s|[# ]*device\.name1=.*|device.name1=${DEVICE}|" "${AK3_DIR}/anykernel.sh"
+    sed -i -E "s|[# ]*device\.name2=.*|device.name2=MI 6X|" "${AK3_DIR}/anykernel.sh"
+
+    # 4. 正确配置分区与槽位变量（这里的 shell 变量需要带分号）
     sed -i -E "s|^[bB][lL][oO][cC][kK]=.*|BLOCK=auto;|" "${AK3_DIR}/anykernel.sh"
     sed -i -E "s|^[iI][sS]_[sS][lL][oO][tT]_[dD][eE][vV][iI][cC][eE]=.*|IS_SLOT_DEVICE=0;|" "${AK3_DIR}/anykernel.sh"
-    log "AnyKernel3 configured for ${DEVICE} (BLOCK=auto, IS_SLOT_DEVICE=0)"
+
+    log "AnyKernel3 configured for ${DEVICE} (do.devicecheck=0, BLOCK=auto)"
 fi
 
 # Base defconfig
