@@ -41,6 +41,27 @@ export LOCALVERSION=
 ./scripts/config --file "${OUT_DIR}/.config" --disable CONFIG_LOCALVERSION_AUTO
 ./scripts/config --file "${OUT_DIR}/.config" --disable CONFIG_LOCALVERSION_SHA
 
+# 关键修复：当变体为 ksu 时，直接强制开启 Kprobes、Ftrace、KSU 及 SuSFS 全套选项
+if [ "$VARIANT" = "ksu" ]; then
+    log "Enforcing KSU & SuSFS configs into ${OUT_DIR}/.config"
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_KPROBES
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_HAVE_KPROBES
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_KPROBE_EVENTS
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_FTRACE
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_FTRACE_SYSCALLS
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_KSU
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_KSU_SUSFS
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_KSU_SUSFS_SUS_PATH
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_KSU_SUSFS_ENABLE_LOG
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
+    ./scripts/config --file "${OUT_DIR}/.config" --enable CONFIG_KSU_SUSFS_SUS_MAP
+fi
+
 # Merge config fragments written by variant.sh into out/.config
 FRAGMENT_DIR="zincore_fragments"
 if [ -d "$FRAGMENT_DIR" ]; then
