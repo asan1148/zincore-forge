@@ -127,28 +127,7 @@ log "Fixing ksu_is_init_rc_hook_enabled via independent source file"
 git checkout -- "fs/read_write.c" 2>/dev/null || true
 sed -i '/ksu_is_init_rc_hook_enabled/d' "fs/read_write.c" 2>/dev/null || true
 
-# 2. 新建独立的 C 文件并包含完整的标准头文件
-cat << 'EOF' > fs/ksu_susfs_fix.c
-#include <linux/jump_label.h>
-#include <linux/export.h>
-
-struct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;
-EXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);
-EOF
-
-# 3. 将其注册进 fs/Makefile 参与正常构建
-if ! grep -q "ksu_susfs_fix.o" "fs/Makefile" 2>/dev/null; then
-    echo "obj-y += ksu_susfs_fix.o" >> fs/Makefile
-fi
-
-# 解决 SuSFS 缺失 ksu_is_init_rc_hook_enabled 的独立编译单元方案
-log "Fixing ksu_is_init_rc_hook_enabled via independent source file"
-
-# 1. 还原并清理 fs/read_write.c 中可能残留的脏代码
-git checkout -- "fs/read_write.c" 2>/dev/null || true
-sed -i '/ksu_is_init_rc_hook_enabled/d' "fs/read_write.c" 2>/dev/null || true
-
-# 2. 清理之前误写入 fs/Kconfig 的非法引用，并清理不存在的 fs/susfs 软链/目录
+# 2. 清理之前误写入 fs/Kconfig 的非法引用，并清理残留目录
 sed -i '/fs\/susfs\/Kconfig/d' "fs/Kconfig" 2>/dev/null || true
 rm -rf "fs/susfs"
 
@@ -166,10 +145,10 @@ if ! grep -q "ksu_susfs_fix.o" "fs/Makefile" 2>/dev/null; then
     echo "obj-y += ksu_susfs_fix.o" >> fs/Makefile
 fi
 
-# 5. 确保 fs/Makefile 正常编译 susfs.o（4.19 内核中 SuSFS 实体为 fs/susfs.c）
+# 5. 确保 fs/Makefile 编译 susfs.o（强制 obj-y 编入，防止被旧 Kconfig 规则忽略）
 if [ -f "fs/susfs.c" ] && ! grep -q "susfs.o" "fs/Makefile" 2>/dev/null; then
-    echo "obj-\$(CONFIG_KSU_SUSFS) += susfs.o" >> fs/Makefile
-    log "Registered susfs.o to fs/Makefile"
+    echo "obj-y += susfs.o" >> fs/Makefile
+    log "Registered susfs.o as built-in (obj-y) to fs/Makefile"
 fi
 
 # Core config fragment (structural — merged into out/.config by compile.sh)
