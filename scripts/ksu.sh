@@ -145,10 +145,20 @@ if ! grep -q "ksu_susfs_fix.o" "fs/Makefile" 2>/dev/null; then
     echo "obj-y += ksu_susfs_fix.o" >> fs/Makefile
 fi
 
-# 5. 确保 fs/Makefile 编译 susfs.o（强制 obj-y 编入，防止被旧 Kconfig 规则忽略）
-if [ -f "fs/susfs.c" ] && ! grep -q "susfs.o" "fs/Makefile" 2>/dev/null; then
+# 5. 确保 fs/Makefile 编译 susfs.o（强制使用 obj-y，避免受 CONFIG_KSU_SUSFS 依赖失效影响）
+if [ -f "fs/susfs.c" ]; then
+    sed -i '/susfs\.o/d' "fs/Makefile" 2>/dev/null || true
     echo "obj-y += susfs.o" >> fs/Makefile
-    log "Registered susfs.o as built-in (obj-y) to fs/Makefile"
+    log "Forced susfs.o as obj-y in fs/Makefile"
+fi
+
+# 6. 全局头文件硬编码激活 SuSFS 特性宏定义，防止预处理条件因 Kconfig 剔除而被绕过
+if [ -f "include/linux/susfs.h" ]; then
+    sed -i '1i #ifndef CONFIG_KSU_SUSFS\n#define CONFIG_KSU_SUSFS 1\n#endif' include/linux/susfs.h
+    sed -i '1i #ifndef CONFIG_KSU_SUSFS_SUS_PATH\n#define CONFIG_KSU_SUSFS_SUS_PATH 1\n#endif' include/linux/susfs.h
+    sed -i '1i #ifndef CONFIG_KSU_SUSFS_SUS_MOUNT\n#define CONFIG_KSU_SUSFS_SUS_MOUNT 1\n#endif' include/linux/susfs.h
+    sed -i '1i #ifndef CONFIG_KSU_SUSFS_SUS_KSTAT\n#define CONFIG_KSU_SUSFS_SUS_KSTAT 1\n#endif' include/linux/susfs.h
+    log "Injected SuSFS macro definitions into include/linux/susfs.h"
 fi
 
 # Core config fragment (structural — merged into out/.config by compile.sh)
