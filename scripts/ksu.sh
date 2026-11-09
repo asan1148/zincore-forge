@@ -123,6 +123,25 @@ grep -o "Current susfs patch version:[0-9.]*" /tmp/zincore_susfs_hook.log | head
 # 解决 SuSFS 缺失 ksu_is_init_rc_hook_enabled 的独立编译单元方案
 log "Fixing ksu_is_init_rc_hook_enabled via independent source file"
 
+# 1. 如果 SuSFS 源码被 clone 在 .zincore_deps 中，将其复制或链接到 fs/susfs
+if [ -d "${SUSFS_SRC}/Kernel/fs/susfs" ]; then
+    cp -r "${SUSFS_SRC}/Kernel/fs/susfs" fs/
+elif [ -d "${SUSFS_SRC}/fs/susfs" ]; then
+    cp -r "${SUSFS_SRC}/fs/susfs" fs/
+fi
+
+# 2. 确保 fs/Kconfig 引入了 susfs/Kconfig
+if [ -f "fs/Kconfig" ] && ! grep -q "fs/susfs/Kconfig" "fs/Kconfig" 2>/dev/null; then
+    sed -i '/endmenu/i source "fs/susfs/Kconfig"' "fs/Kconfig"
+    log "Injected susfs Kconfig entry into fs/Kconfig"
+fi
+
+# 3. 确保 fs/Makefile 引入了 susfs 编译目录
+if [ -f "fs/Makefile" ] && ! grep -q "susfs" "fs/Makefile" 2>/dev/null; then
+    echo "obj-\$(CONFIG_KSU_SUSFS) += susfs/" >> fs/Makefile
+    log "Injected susfs obj entry into fs/Makefile"
+fi
+
 # 1. 还原并清理 fs/read_write.c 中可能残留的脏代码
 git checkout -- "fs/read_write.c" 2>/dev/null || true
 sed -i '/ksu_is_init_rc_hook_enabled/d' "fs/read_write.c" 2>/dev/null || true
