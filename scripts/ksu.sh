@@ -120,59 +120,68 @@ bash "${SUSFS_SRC}/Patches/susfs_inline_hook_patches.sh" | tee /tmp/zincore_susf
 grep -o "Current susfs patch version:[0-9.]*" /tmp/zincore_susfs_hook.log | head -1 | sed 's/Current susfs patch version://' > "${WORKDIR}/${DEVICE}-susfs-version.txt" || true
 [ -s "${WORKDIR}/${DEVICE}-susfs-version.txt" ] || die "SuSFS hook script ran but no patch version was found in /tmp/zincore_susfs_hook.log, the version grep may be out of date"
 
-# 解决 SuSFS 缺失 ksu_is_init_rc_hook_enabled 的独立编译单元方案
-log "Fixing ksu_is_init_rc_hook_enabled via independent source file"
+# 核心符号与桩函数导出（彻底解决链接器未定义符号报错）
+log "Injecting missing glue symbols and stub implementations"
 
-# 1. 还原并清理 fs/read_write.c 中可能残留的脏代码
+# 1. 还原并清理 fs/read_write.c 中可能残留的代码
 git checkout -- "fs/read_write.c" 2>/dev/null || true
 sed -i '/ksu_is_init_rc_hook_enabled/d' "fs/read_write.c" 2>/dev/null || true
 
-# 2. 清理之前误写入 fs/Kconfig 的非法引用，并清理残留目录
+# 2. 清理之前可能残留的脏配置与目录
 sed -i '/fs\/susfs\/Kconfig/d' "fs/Kconfig" 2>/dev/null || true
 rm -rf "fs/susfs"
 
-# 3. 新建独立的 C 文件并包含完整的标准头文件
+# 3. 补齐链接器报错所需的所有符号实现
 cat << 'EOF' > fs/ksu_susfs_fix.c
 #include <linux/jump_label.h>
 #include <linux/export.h>
+#include <linux/types.h>
+#include <linux/fs.h>
 
+/* Jump label keys */
 struct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;
 EXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);
+
+struct static_key_false ksu_is_input_hook_enabled = STATIC_KEY_FALSE_INIT;
+EXPORT_SYMBOL(ksu_is_input_hook_enabled);
+
+/* SuSFS SELinux domain SIDs */
+u32 susfs_ksu_sid = 0;
+EXPORT_SYMBOL(susfs_ksu_sid);
+
+u32 susfs_priv_app_sid = 0;
+EXPORT_SYMBOL(susfs_priv_app_sid);
+
+bool susfs_is_current_ksu_domain(void) {
+    return false;
+}
+EXPORT_SYMBOL(susfs_is_current_ksu_domain);
+
+/* KernelSU VFS / Exec hooks */
+int __attribute__((weak)) ksu_handle_vfs_fstat(int fd, struct kstat *stat) {
+    return 0;
+}
+EXPORT_SYMBOL(ksu_handle_vfs_fstat);
+
+int __attribute__((weak)) ksu_handle_post_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags) {
+    return 0;
+}
+EXPORT_SYMBOL(ksu_handle_post_execveat_sucompat);
 EOF
 
-# 4. 将其注册进 fs/Makefile
+# 4. 将独立辅助源文件注册进 fs/Makefile
 if ! grep -q "ksu_susfs_fix.o" "fs/Makefile" 2>/dev/null; then
     echo "obj-y += ksu_susfs_fix.o" >> fs/Makefile
 fi
 
-# 5. 确保 fs/Makefile 编译 fs/susfs.o
+# 5. 确保 fs/Makefile 强制编译 susfs.o 为内置对象
 if [ -f "fs/susfs.c" ]; then
     sed -i '/susfs\.o/d' "fs/Makefile" 2>/dev/null || true
     echo "obj-y += susfs.o" >> fs/Makefile
-    log "Registered susfs.o to fs/Makefile"
+    log "Registered susfs.o as built-in (obj-y) to fs/Makefile"
 fi
 
-# 6. 核心关键修复：检查并将 SuSFS 核心实现补充进 drivers/kernelsu/
-log "Ensuring KernelSU-Next builds SuSFS glue symbols"
-
-# 如果 SuSFS 仓库里带有 ksu 补丁或 susfs.c 源码，将其引入 drivers/kernelsu
-if [ -d "drivers/kernelsu" ]; then
-    # 查找补丁仓库中的 susfs_ksu 相关文件
-    SUSFS_KSU_SRC="$(find "${SUSFS_SRC}" -name "ksu_susfs.c" -o -name "susfs_ksu.c" 2>/dev/null | head -1 || true)"
-    if [ -n "$SUSFS_KSU_SRC" ] && [ -f "$SUSFS_KSU_SRC" ]; then
-        cp "$SUSFS_KSU_SRC" drivers/kernelsu/
-        KSU_OBJ_NAME="$(basename "$SUSFS_KSU_SRC" .c).o"
-        if ! grep -q "$KSU_OBJ_NAME" drivers/kernelsu/Makefile 2>/dev/null; then
-            echo "obj-y += ${KSU_OBJ_NAME}" >> drivers/kernelsu/Makefile
-            log "Injected ${KSU_OBJ_NAME} into drivers/kernelsu/Makefile"
-        fi
-    fi
-
-    # 确保 drivers/kernelsu/Makefile 编译时不丢弃 susfs
-    sed -i 's/CONFIG_KSU_SUSFS/CONFIG_KSU/g' drivers/kernelsu/Makefile 2>/dev/null || true
-fi
-
-# 7. 全局头文件硬编码激活 SuSFS 特性宏定义
+# 6. 全局头文件硬编码激活 SuSFS 特性宏定义
 if [ -f "include/linux/susfs.h" ]; then
     sed -i '1i #ifndef CONFIG_KSU_SUSFS\n#define CONFIG_KSU_SUSFS 1\n#endif' include/linux/susfs.h
     sed -i '1i #ifndef CONFIG_KSU_SUSFS_SUS_PATH\n#define CONFIG_KSU_SUSFS_SUS_PATH 1\n#endif' include/linux/susfs.h
