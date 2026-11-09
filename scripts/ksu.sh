@@ -141,33 +141,35 @@ if ! grep -q "ksu_susfs_fix.o" "fs/Makefile" 2>/dev/null; then
     echo "obj-y += ksu_susfs_fix.o" >> fs/Makefile
 fi
 
-# 确保 SuSFS 源码注入与 Kconfig/Makefile 完整集成
-log "Ensuring SuSFS Kconfig & Makefile integration"
+# 解决 SuSFS 缺失 ksu_is_init_rc_hook_enabled 的独立编译单元方案
+log "Fixing ksu_is_init_rc_hook_enabled via independent source file"
 
-# 1. 精准寻找包含 Kconfig 的真实 susfs 源码子目录并同步至 fs/susfs
-if [ ! -f "fs/susfs/Kconfig" ]; then
-    rm -rf "fs/susfs"
-    # 优先匹配带有 Kconfig 文件的标准子目录
-    SUSFS_REAL_DIR="$(find "${SUSFS_SRC}" -type f -name "Kconfig" -path "*/susfs/*" 2>/dev/null | head -1 | xargs -r dirname || true)"
-    
-    if [ -n "$SUSFS_REAL_DIR" ] && [ -d "$SUSFS_REAL_DIR" ]; then
-        cp -r "$SUSFS_REAL_DIR" fs/susfs
-        log "Accurately copied susfs source from: $SUSFS_REAL_DIR to fs/susfs"
-    else
-        die "Could not locate valid susfs directory containing Kconfig under ${SUSFS_SRC}"
-    fi
+# 1. 还原并清理 fs/read_write.c 中可能残留的脏代码
+git checkout -- "fs/read_write.c" 2>/dev/null || true
+sed -i '/ksu_is_init_rc_hook_enabled/d' "fs/read_write.c" 2>/dev/null || true
+
+# 2. 清理之前误写入 fs/Kconfig 的非法引用，并清理不存在的 fs/susfs 软链/目录
+sed -i '/fs\/susfs\/Kconfig/d' "fs/Kconfig" 2>/dev/null || true
+rm -rf "fs/susfs"
+
+# 3. 新建独立的 C 文件并包含完整的标准头文件
+cat << 'EOF' > fs/ksu_susfs_fix.c
+#include <linux/jump_label.h>
+#include <linux/export.h>
+
+struct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;
+EXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);
+EOF
+
+# 4. 将其注册进 fs/Makefile 参与正常构建
+if ! grep -q "ksu_susfs_fix.o" "fs/Makefile" 2>/dev/null; then
+    echo "obj-y += ksu_susfs_fix.o" >> fs/Makefile
 fi
 
-# 2. 注入 susfs Kconfig 入口（避免 olddefconfig 丢弃 CONFIG_KSU_SUSFS）
-if [ -f "fs/Kconfig" ] && ! grep -q "fs/susfs/Kconfig" "fs/Kconfig" 2>/dev/null; then
-    sed -i '/endmenu/i source "fs/susfs/Kconfig"' fs/Kconfig
-    log "Injected susfs Kconfig entry into fs/Kconfig"
-fi
-
-# 3. 注入 susfs 编译目标进 fs/Makefile
-if [ -f "fs/Makefile" ] && ! grep -q "susfs" "fs/Makefile" 2>/dev/null; then
-    echo "obj-\$(CONFIG_KSU_SUSFS) += susfs/" >> fs/Makefile
-    log "Injected susfs obj entry into fs/Makefile"
+# 5. 确保 fs/Makefile 正常编译 susfs.o（4.19 内核中 SuSFS 实体为 fs/susfs.c）
+if [ -f "fs/susfs.c" ] && ! grep -q "susfs.o" "fs/Makefile" 2>/dev/null; then
+    echo "obj-\$(CONFIG_KSU_SUSFS) += susfs.o" >> fs/Makefile
+    log "Registered susfs.o to fs/Makefile"
 fi
 
 # Core config fragment (structural — merged into out/.config by compile.sh)
