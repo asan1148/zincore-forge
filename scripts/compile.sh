@@ -30,13 +30,13 @@ git clone --depth 1 -b "$AK3_BRANCH" "$AK3_REPO" "$AK3_DIR"
 
 # 自动注入 AnyKernel3 适配配置（机型代号 + 分区自动探测）
 if [ -f "${AK3_DIR}/anykernel.sh" ]; then
-    sed -i "s/device.name1=.*/device.name1=${DEVICE};/" "${AK3_DIR}/anykernel.sh"
-    sed -i "s/device.name2=.*/device.name2=;" "${AK3_DIR}/anykernel.sh"
-    sed -i "s/device.name3=.*/device.name3=;" "${AK3_DIR}/anykernel.sh"
-    sed -i "s/device.name4=.*/device.name4=;" "${AK3_DIR}/anykernel.sh"
-    sed -i "s/device.name5=.*/device.name5=;" "${AK3_DIR}/anykernel.sh"
+    sed -i "s|^device\.name1=.*|device.name1=${DEVICE};|" "${AK3_DIR}/anykernel.sh"
+    sed -i "s|^device\.name2=.*|device.name2=;|" "${AK3_DIR}/anykernel.sh"
+    sed -i "s|^device\.name3=.*|device.name3=;|" "${AK3_DIR}/anykernel.sh"
+    sed -i "s|^device\.name4=.*|device.name4=;|" "${AK3_DIR}/anykernel.sh"
+    sed -i "s|^device\.name5=.*|device.name5=;|" "${AK3_DIR}/anykernel.sh"
     sed -i "s|^block=.*|block=auto;|" "${AK3_DIR}/anykernel.sh"
-    sed -i "s/is_slot_device=.*/is_slot_device=0;/" "${AK3_DIR}/anykernel.sh"
+    sed -i "s|^is_slot_device=.*|is_slot_device=0;|" "${AK3_DIR}/anykernel.sh"
     log "AnyKernel3 configured for ${DEVICE} (block=auto)"
 fi
 
