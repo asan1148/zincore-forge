@@ -140,19 +140,39 @@ struct static_key_true ksu_is_init_rc_hook_enabled = STATIC_KEY_TRUE_INIT;
 EXPORT_SYMBOL(ksu_is_init_rc_hook_enabled);
 EOF
 
-# 4. 将其注册进 fs/Makefile 参与正常构建
+# 4. 将其注册进 fs/Makefile
 if ! grep -q "ksu_susfs_fix.o" "fs/Makefile" 2>/dev/null; then
     echo "obj-y += ksu_susfs_fix.o" >> fs/Makefile
 fi
 
-# 5. 确保 fs/Makefile 编译 susfs.o（强制使用 obj-y，避免受 CONFIG_KSU_SUSFS 依赖失效影响）
+# 5. 确保 fs/Makefile 编译 fs/susfs.o
 if [ -f "fs/susfs.c" ]; then
     sed -i '/susfs\.o/d' "fs/Makefile" 2>/dev/null || true
     echo "obj-y += susfs.o" >> fs/Makefile
-    log "Forced susfs.o as obj-y in fs/Makefile"
+    log "Registered susfs.o to fs/Makefile"
 fi
 
-# 6. 全局头文件硬编码激活 SuSFS 特性宏定义，防止预处理条件因 Kconfig 剔除而被绕过
+# 6. 核心关键修复：检查并将 SuSFS 核心实现补充进 drivers/kernelsu/
+log "Ensuring KernelSU-Next builds SuSFS glue symbols"
+
+# 如果 SuSFS 仓库里带有 ksu 补丁或 susfs.c 源码，将其引入 drivers/kernelsu
+if [ -d "drivers/kernelsu" ]; then
+    # 查找补丁仓库中的 susfs_ksu 相关文件
+    SUSFS_KSU_SRC="$(find "${SUSFS_SRC}" -name "ksu_susfs.c" -o -name "susfs_ksu.c" 2>/dev/null | head -1 || true)"
+    if [ -n "$SUSFS_KSU_SRC" ] && [ -f "$SUSFS_KSU_SRC" ]; then
+        cp "$SUSFS_KSU_SRC" drivers/kernelsu/
+        KSU_OBJ_NAME="$(basename "$SUSFS_KSU_SRC" .c).o"
+        if ! grep -q "$KSU_OBJ_NAME" drivers/kernelsu/Makefile 2>/dev/null; then
+            echo "obj-y += ${KSU_OBJ_NAME}" >> drivers/kernelsu/Makefile
+            log "Injected ${KSU_OBJ_NAME} into drivers/kernelsu/Makefile"
+        fi
+    fi
+
+    # 确保 drivers/kernelsu/Makefile 编译时不丢弃 susfs
+    sed -i 's/CONFIG_KSU_SUSFS/CONFIG_KSU/g' drivers/kernelsu/Makefile 2>/dev/null || true
+fi
+
+# 7. 全局头文件硬编码激活 SuSFS 特性宏定义
 if [ -f "include/linux/susfs.h" ]; then
     sed -i '1i #ifndef CONFIG_KSU_SUSFS\n#define CONFIG_KSU_SUSFS 1\n#endif' include/linux/susfs.h
     sed -i '1i #ifndef CONFIG_KSU_SUSFS_SUS_PATH\n#define CONFIG_KSU_SUSFS_SUS_PATH 1\n#endif' include/linux/susfs.h
