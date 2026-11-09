@@ -144,20 +144,17 @@ fi
 # 确保 SuSFS 源码注入与 Kconfig/Makefile 完整集成
 log "Ensuring SuSFS Kconfig & Makefile integration"
 
-# 1. 自动定位并将 SuSFS 源码目录同步至 fs/susfs
-if [ ! -d "fs/susfs" ]; then
-    if [ -d "${SUSFS_SRC}/Kernel/fs/susfs" ]; then
-        cp -r "${SUSFS_SRC}/Kernel/fs/susfs" fs/
-    elif [ -d "${SUSFS_SRC}/Kernel_patches/fs/susfs" ]; then
-        cp -r "${SUSFS_SRC}/Kernel_patches/fs/susfs" fs/
-    elif [ -d "${SUSFS_SRC}/fs/susfs" ]; then
-        cp -r "${SUSFS_SRC}/fs/susfs" fs/
+# 1. 精准寻找包含 Kconfig 的真实 susfs 源码子目录并同步至 fs/susfs
+if [ ! -f "fs/susfs/Kconfig" ]; then
+    rm -rf "fs/susfs"
+    # 优先匹配带有 Kconfig 文件的标准子目录
+    SUSFS_REAL_DIR="$(find "${SUSFS_SRC}" -type f -name "Kconfig" -path "*/susfs/*" 2>/dev/null | head -1 | xargs -r dirname || true)"
+    
+    if [ -n "$SUSFS_REAL_DIR" ] && [ -d "$SUSFS_REAL_DIR" ]; then
+        cp -r "$SUSFS_REAL_DIR" fs/susfs
+        log "Accurately copied susfs source from: $SUSFS_REAL_DIR to fs/susfs"
     else
-        SUSFS_DIR_FOUND="$(find "$SUSFS_SRC" -type d -name "susfs" 2>/dev/null | grep -v "/\.git" | head -1 || true)"
-        if [ -n "$SUSFS_DIR_FOUND" ]; then
-            cp -r "$SUSFS_DIR_FOUND" fs/
-            log "Found and copied susfs to fs/susfs from: $SUSFS_DIR_FOUND"
-        fi
+        die "Could not locate valid susfs directory containing Kconfig under ${SUSFS_SRC}"
     fi
 fi
 
