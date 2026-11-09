@@ -123,25 +123,6 @@ grep -o "Current susfs patch version:[0-9.]*" /tmp/zincore_susfs_hook.log | head
 # 解决 SuSFS 缺失 ksu_is_init_rc_hook_enabled 的独立编译单元方案
 log "Fixing ksu_is_init_rc_hook_enabled via independent source file"
 
-# 1. 如果 SuSFS 源码被 clone 在 .zincore_deps 中，将其复制或链接到 fs/susfs
-if [ -d "${SUSFS_SRC}/Kernel/fs/susfs" ]; then
-    cp -r "${SUSFS_SRC}/Kernel/fs/susfs" fs/
-elif [ -d "${SUSFS_SRC}/fs/susfs" ]; then
-    cp -r "${SUSFS_SRC}/fs/susfs" fs/
-fi
-
-# 2. 确保 fs/Kconfig 引入了 susfs/Kconfig
-if [ -f "fs/Kconfig" ] && ! grep -q "fs/susfs/Kconfig" "fs/Kconfig" 2>/dev/null; then
-    sed -i '/endmenu/i source "fs/susfs/Kconfig"' "fs/Kconfig"
-    log "Injected susfs Kconfig entry into fs/Kconfig"
-fi
-
-# 3. 确保 fs/Makefile 引入了 susfs 编译目录
-if [ -f "fs/Makefile" ] && ! grep -q "susfs" "fs/Makefile" 2>/dev/null; then
-    echo "obj-\$(CONFIG_KSU_SUSFS) += susfs/" >> fs/Makefile
-    log "Injected susfs obj entry into fs/Makefile"
-fi
-
 # 1. 还原并清理 fs/read_write.c 中可能残留的脏代码
 git checkout -- "fs/read_write.c" 2>/dev/null || true
 sed -i '/ksu_is_init_rc_hook_enabled/d' "fs/read_write.c" 2>/dev/null || true
@@ -158,6 +139,38 @@ EOF
 # 3. 将其注册进 fs/Makefile 参与正常构建
 if ! grep -q "ksu_susfs_fix.o" "fs/Makefile" 2>/dev/null; then
     echo "obj-y += ksu_susfs_fix.o" >> fs/Makefile
+fi
+
+# 确保 SuSFS 源码注入与 Kconfig/Makefile 完整集成
+log "Ensuring SuSFS Kconfig & Makefile integration"
+
+# 1. 自动定位并将 SuSFS 源码目录同步至 fs/susfs
+if [ ! -d "fs/susfs" ]; then
+    if [ -d "${SUSFS_SRC}/Kernel/fs/susfs" ]; then
+        cp -r "${SUSFS_SRC}/Kernel/fs/susfs" fs/
+    elif [ -d "${SUSFS_SRC}/Kernel_patches/fs/susfs" ]; then
+        cp -r "${SUSFS_SRC}/Kernel_patches/fs/susfs" fs/
+    elif [ -d "${SUSFS_SRC}/fs/susfs" ]; then
+        cp -r "${SUSFS_SRC}/fs/susfs" fs/
+    else
+        SUSFS_DIR_FOUND="$(find "$SUSFS_SRC" -type d -name "susfs" 2>/dev/null | grep -v "/\.git" | head -1 || true)"
+        if [ -n "$SUSFS_DIR_FOUND" ]; then
+            cp -r "$SUSFS_DIR_FOUND" fs/
+            log "Found and copied susfs to fs/susfs from: $SUSFS_DIR_FOUND"
+        fi
+    fi
+fi
+
+# 2. 注入 susfs Kconfig 入口（避免 olddefconfig 丢弃 CONFIG_KSU_SUSFS）
+if [ -f "fs/Kconfig" ] && ! grep -q "fs/susfs/Kconfig" "fs/Kconfig" 2>/dev/null; then
+    sed -i '/endmenu/i source "fs/susfs/Kconfig"' fs/Kconfig
+    log "Injected susfs Kconfig entry into fs/Kconfig"
+fi
+
+# 3. 注入 susfs 编译目标进 fs/Makefile
+if [ -f "fs/Makefile" ] && ! grep -q "susfs" "fs/Makefile" 2>/dev/null; then
+    echo "obj-\$(CONFIG_KSU_SUSFS) += susfs/" >> fs/Makefile
+    log "Injected susfs obj entry into fs/Makefile"
 fi
 
 # Core config fragment (structural — merged into out/.config by compile.sh)
@@ -200,7 +213,7 @@ if [ "$UNSTATIC_APPLIED" -lt "$UNSTATIC_TOTAL" ]; then
     warn "$((UNSTATIC_TOTAL - UNSTATIC_APPLIED)) pattern(s) above were NOT applied — this is expected if they're already non-static in this tree, but if this is a NEW kernel source (different repo/version than previously verified), manually confirm KernelSU-Next actually has the symbol access it needs before trusting this build."
 fi
 
-# 核心方案：直接强写设备原厂 defconfig，彻底解决 olddefconfig 自动丢弃 CONFIG_KSU 的问题
+# 直接注入设备原厂 defconfig，确保内核初次 make defconfig 即携带完整功能
 DEFCONFIG_FILE="arch/arm64/configs/vendor/wayne_defconfig"
 log "Directly injecting KSU & dependencies into $DEFCONFIG_FILE"
 if [ -f "$DEFCONFIG_FILE" ]; then
@@ -231,7 +244,7 @@ CONFIG_KSU_SUSFS_SUS_MAP=y
 EOF
 fi
 
-# 同时在 fragment 中双重兜底
+# 写入 fragment 文件用于兜底合并
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KPROBES"
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_HAVE_KPROBES"
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KPROBE_EVENTS"
