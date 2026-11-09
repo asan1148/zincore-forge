@@ -181,11 +181,37 @@ if [ "$UNSTATIC_APPLIED" -lt "$UNSTATIC_TOTAL" ]; then
     warn "$((UNSTATIC_TOTAL - UNSTATIC_APPLIED)) pattern(s) above were NOT applied — this is expected if they're already non-static in this tree, but if this is a NEW kernel source (different repo/version than previously verified), manually confirm KernelSU-Next actually has the symbol access it needs before trusting this build."
 fi
 
-# 关键：开启 KSU 驱动及其必须的内核依赖（防止 olddefconfig 自动丢弃 CONFIG_KSU）
+# 核心方案：直接强写设备原厂 defconfig，彻底解决 olddefconfig 自动丢弃 CONFIG_KSU 的问题
+DEFCONFIG_FILE="arch/arm64/configs/vendor/wayne_defconfig"
+log "Directly injecting KSU & dependencies into $DEFCONFIG_FILE"
+if [ -f "$DEFCONFIG_FILE" ]; then
+    sed -i '/CONFIG_KSU/d' "$DEFCONFIG_FILE"
+    sed -i '/CONFIG_KPROBES/d' "$DEFCONFIG_FILE"
+    sed -i '/CONFIG_HAVE_KPROBES/d' "$DEFCONFIG_FILE"
+    sed -i '/CONFIG_KPROBE_EVENTS/d' "$DEFCONFIG_FILE"
+
+    cat << 'EOF' >> "$DEFCONFIG_FILE"
+CONFIG_KPROBES=y
+CONFIG_HAVE_KPROBES=y
+CONFIG_KPROBE_EVENTS=y
+CONFIG_KSU=y
+CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_SUS_PATH=y
+CONFIG_KSU_SUSFS_SUS_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_KSTAT=y
+CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+CONFIG_KSU_SUSFS_ENABLE_LOG=y
+CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+CONFIG_KSU_SUSFS_SUS_MAP=y
+EOF
+fi
+
+# 同时在 fragment 中双重兜底
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KPROBES"
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_HAVE_KPROBES"
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KPROBE_EVENTS"
-
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KSU"
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KSU_SUSFS"
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KSU_SUSFS_SUS_PATH"
@@ -198,7 +224,7 @@ fragment_add "$FRAGMENT_FILE" "-e CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG"
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KSU_SUSFS_OPEN_REDIRECT"
 fragment_add "$FRAGMENT_FILE" "-e CONFIG_KSU_SUSFS_SUS_MAP"
 
-# THREAD_INFO_IN_TASK 条件依赖检查（同时覆盖 drivers/ 和根目录软链）
+# THREAD_INFO_IN_TASK 条件依赖检查
 if grep -q "THREAD_INFO_IN_TASK" "drivers/kernelsu/Kconfig" 2>/dev/null || grep -q "THREAD_INFO_IN_TASK" "KernelSU/kernel/Kconfig" 2>/dev/null; then
     fragment_add "$FRAGMENT_FILE" "-e CONFIG_THREAD_INFO_IN_TASK"
     log "THREAD_INFO_IN_TASK required by this KernelSU Kconfig, added"
